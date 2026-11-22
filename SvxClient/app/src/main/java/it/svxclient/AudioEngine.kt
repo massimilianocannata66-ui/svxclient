@@ -7,7 +7,7 @@ import android.media.AudioTrack
 import android.media.MediaRecorder
 import io.github.jaredmdobson.concentus.OpusApplication
 import io.github.jaredmdobson.concentus.OpusDecoder
-import io.github.jaredmdobson.concentus.OpusEncode
+import io.github.jaredmdobson.concentus.OpusEncoder
 import io.github.jaredmdobson.concentus.OpusSignal
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
