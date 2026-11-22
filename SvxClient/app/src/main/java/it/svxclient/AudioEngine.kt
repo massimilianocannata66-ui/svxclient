@@ -5,10 +5,10 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
-import org.concentus.OpusApplication
-import org.concentus.OpusDecoder
-import org.concentus.OpusEncoder
-import org.concentus.OpusSignal
+import io.github.jaredmdobson.concentus.OpusApplication
+import io.github.jaredmdobson.concentus.OpusDecoder
+import io.github.jaredmdobson.concentus.OpusEncode
+import io.github.jaredmdobson.concentus.OpusSignal
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
