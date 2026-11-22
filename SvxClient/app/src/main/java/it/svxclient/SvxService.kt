@@ -5,7 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -33,6 +36,27 @@ class SvxService : Service() {
         fun ptt(down: Boolean) {
             instance?.handlePtt(down)
         }
+
+        /** Rilegge volume/microfono e segnali PTT dalle impostazioni. */
+        fun reloadSettings() {
+            instance?.applySettings()
+        }
+
+        /** Cambia talkgroup al volo, anche con la connessione attiva. */
+        fun changeTg(tg: Int) {
+            val sess = instance?.session ?: return
+            Thread { sess.selectTg(tg) }.start()       // la rete non va usata dal thread principale
+        }
+
+        /** Segnali usati da molte radio POC per il tasto PTT fisico. */
+        val DEFAULT_DOWN = listOf(
+            "android.intent.action.PTT.down",
+            "com.sonim.intent.action.PTT_KEY_DOWN",
+        )
+        val DEFAULT_UP = listOf(
+            "android.intent.action.PTT.up",
+            "com.sonim.intent.action.PTT_KEY_UP",
+        )
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -43,6 +67,9 @@ class SvxService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private val retryRunnable = Runnable { openSession() }
+    private var pttReceiver: BroadcastReceiver? = null
+    private var downActions: Set<String> = emptySet()
+    private var upActions: Set<String> = emptySet()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -52,6 +79,7 @@ class SvxService : Service() {
     }
 
     override fun onDestroy() {
+        unregisterPttReceiver()
         instance = null
         closeAll()
         super.onDestroy()
@@ -66,6 +94,7 @@ class SvxService : Service() {
                 retryDelayMs = 3000L
                 releaseLocks()
                 acquireLocks()
+                registerPttReceiver()
                 openSession()
             }
             ACTION_DISCONNECT -> {
@@ -95,6 +124,7 @@ class SvxService : Service() {
                     SvxBus.notifyChanged()
                 },
             ).also { it.start() }
+            applySettings()
         }
 
         SvxBus.log("Connessione a ${p.host}:${p.port} come ${p.callsign}, TG ${p.tg}")
@@ -107,6 +137,7 @@ class SvxService : Service() {
 
     private fun closeAll(detail: String = "Non connesso") {
         main.removeCallbacks(retryRunnable)
+        unregisterPttReceiver()
         session?.stop()
         session = null
         audio?.stop()
@@ -118,6 +149,49 @@ class SvxService : Service() {
         SvxBus.talker = null
         SvxBus.transmitting = false
         SvxBus.notifyChanged()
+    }
+
+    // ------------------------------------------- impostazioni e PTT fisico
+
+    private fun splitActions(text: String): List<String> =
+        text.split(",", ";", " ", "\n").map { it.trim() }.filter { it.isNotEmpty() }
+
+    private fun applySettings() {
+        val p = Prefs(this)
+        audio?.rxGain = p.rxGain / 100f
+        audio?.txGain = p.txGain / 100f
+        if (pttReceiver != null) registerPttReceiver()     // rilegge i nomi dei segnali
+    }
+
+    private fun registerPttReceiver() {
+        unregisterPttReceiver()
+        val p = Prefs(this)
+        downActions = (DEFAULT_DOWN + splitActions(p.pttDownActions)).toSet()
+        upActions = (DEFAULT_UP + splitActions(p.pttUpActions)).toSet()
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val act = intent?.action ?: return
+                when {
+                    act in downActions -> handlePtt(true)
+                    act in upActions -> handlePtt(false)
+                }
+            }
+        }
+        val f = IntentFilter()
+        for (a in downActions + upActions) f.addAction(a)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(r, f, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(r, f)
+        }
+        pttReceiver = r
+    }
+
+    private fun unregisterPttReceiver() {
+        pttReceiver?.let {
+            try { unregisterReceiver(it) } catch (_: Exception) {}
+        }
+        pttReceiver = null
     }
 
     // ----------------------------------------------------------------- PTT
