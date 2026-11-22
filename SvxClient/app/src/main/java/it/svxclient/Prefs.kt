@@ -25,4 +25,27 @@ class Prefs(context: Context) {
     var tg: Int
         get() = sp.getInt("tg", 1)
         set(v) = sp.edit().putInt("tg", v).apply()
+
+    /** Volume ascolto e microfono, in percento (100 = invariato). */
+    var rxGain: Int
+        get() = sp.getInt("rxGain", 100)
+        set(v) = sp.edit().putInt("rxGain", v).apply()
+
+    var txGain: Int
+        get() = sp.getInt("txGain", 100)
+        set(v) = sp.edit().putInt("txGain", v).apply()
+
+    /** Codice del tasto PTT fisico della radio (0 = nessuno). */
+    var pttKey: Int
+        get() = sp.getInt("pttKey", 0)
+        set(v) = sp.edit().putInt("pttKey", v).apply()
+
+    /** Nomi dei segnali (broadcast) del tasto PTT, separati da virgola. */
+    var pttDownActions: String
+        get() = sp.getString("pttDown", "") ?: ""
+        set(v) = sp.edit().putString("pttDown", v).apply()
+
+    var pttUpActions: String
+        get() = sp.getString("pttUp", "") ?: ""
+        set(v) = sp.edit().putString("pttUp", v).apply()
 }
