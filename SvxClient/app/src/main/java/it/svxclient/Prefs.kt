@@ -35,9 +35,9 @@ class Prefs(context: Context) {
         get() = sp.getInt("txGain", 100)
         set(v) = sp.edit().putInt("txGain", v).apply()
 
-    /** Codice del tasto PTT fisico della radio (0 = nessuno). */
+    /** Codice del tasto PTT fisico della radio (132 = F2 della Uniwa F400, 0 = nessuno). */
     var pttKey: Int
-        get() = sp.getInt("pttKey", 0)
+        get() = sp.getInt("pttKey", 132)
         set(v) = sp.edit().putInt("pttKey", v).apply()
 
     /** Nomi dei segnali (broadcast) del tasto PTT, separati da virgola. */
