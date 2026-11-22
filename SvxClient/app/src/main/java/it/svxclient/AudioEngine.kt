@@ -31,6 +31,18 @@ class AudioEngine(
     private val rxQueue = LinkedBlockingQueue<ByteArray>()
     private val flushMarker = ByteArray(0)
 
+    /** Guadagni (1.0 = invariato), modificabili anche durante l'uso. */
+    @Volatile var rxGain: Float = 1.0f
+    @Volatile var txGain: Float = 1.0f
+
+    private fun applyGain(buf: ShortArray, n: Int, g: Float) {
+        if (g == 1.0f) return
+        for (i in 0 until n) {
+            val v = (buf[i] * g).toInt()
+            buf[i] = v.coerceIn(-32768, 32767).toShort()
+        }
+    }
+
     @Volatile private var running = false
     @Volatile private var capturing = false
     private var playThread: Thread? = null
@@ -116,7 +128,10 @@ class AudioEngine(
 
                 try {
                     val n = decoder.decode(frame, 0, frame.size, pcm, 0, pcm.size, false)
-                    if (n > 0) track.write(pcm, 0, n)
+                    if (n > 0) {
+                        applyGain(pcm, n, rxGain)
+                        track.write(pcm, 0, n)
+                    }
                 } catch (e: Exception) {
                     // pacchetto danneggiato: lo salto
                 }
@@ -169,6 +184,7 @@ class AudioEngine(
                         got += r
                     }
                     if (got < FRAME) break
+                    applyGain(pcm, FRAME, txGain)
                     val n = enc.encode(pcm, 0, FRAME, out, 0, out.size)
                     if (n > 0) onEncoded(out.copyOf(n))
                 }
@@ -188,3 +204,4 @@ class AudioEngine(
         capturing = false
     }
 }
+
