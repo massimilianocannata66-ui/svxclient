@@ -48,4 +48,30 @@ class Prefs(context: Context) {
     var pttUpActions: String
         get() = sp.getString("pttUp", "") ?: ""
         set(v) = sp.edit().putString("pttUp", v).apply()
+
+    private fun getInts(key: String): List<Int> =
+        (sp.getString(key, "") ?: "").split(",").mapNotNull { it.trim().toIntOrNull() }
+
+    private fun putInts(key: String, l: List<Int>) {
+        sp.edit().putString(key, l.joinToString(",")).apply()
+    }
+
+    /** Talkgroup salvati dall'utente. */
+    var tgList: List<Int>
+        get() = getInts("tgList")
+        set(v) = putInts("tgList", v)
+
+    /** Ultimi talkgroup usati (il piu' recente per primo). */
+    var tgHistory: List<Int>
+        get() = getInts("tgHistory")
+        set(v) = putInts("tgHistory", v)
+
+    fun noteTgUsed(tg: Int) {
+        tgHistory = (listOf(tg) + tgHistory.filter { it != tg }).take(10)
+    }
+
+    /** Il tasto PTT sullo schermo e' attivo? */
+    var pttScreenEnabled: Boolean
+        get() = sp.getBoolean("pttScreen", true)
+        set(v) = sp.edit().putBoolean("pttScreen", v).apply()
 }
