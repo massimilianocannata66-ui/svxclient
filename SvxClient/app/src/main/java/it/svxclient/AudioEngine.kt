@@ -60,6 +60,7 @@ class AudioEngine(
         running = false
         stopCapture()
         rxQueue.clear()
+        SvxLevel.set(-90f, true)
         playThread?.interrupt()
         playThread = null
     }
@@ -116,6 +117,7 @@ class AudioEngine(
                         track.stop()              // finisce di riprodurre quanto in coda
                         playing = false
                         decoder.resetState()
+                        SvxLevel.set(-90f, true)
                     }
                     continue
                 }
@@ -130,6 +132,7 @@ class AudioEngine(
                     val n = decoder.decode(frame, 0, frame.size, pcm, 0, pcm.size, false)
                     if (n > 0) {
                         applyGain(pcm, n, rxGain)
+                        SvxLevel.set(SvxLevel.dbOf(pcm, n))
                         track.write(pcm, 0, n)
                     }
                 } catch (e: Exception) {
@@ -185,6 +188,7 @@ class AudioEngine(
                     }
                     if (got < FRAME) break
                     applyGain(pcm, FRAME, txGain)
+                    SvxLevel.set(SvxLevel.dbOf(pcm, FRAME))
                     val n = enc.encode(pcm, 0, FRAME, out, 0, out.size)
                     if (n > 0) onEncoded(out.copyOf(n))
                 }
@@ -194,6 +198,7 @@ class AudioEngine(
                 capturing = false
                 try { rec.stop() } catch (_: Exception) {}
                 rec.release()
+                SvxLevel.set(-90f, true)
                 onTxEnd()
             }
         }
@@ -205,3 +210,29 @@ class AudioEngine(
     }
 }
 
+/** Livello del segnale audio (ricevuto o trasmesso) in dB, da -90 (silenzio) a 0. */
+object SvxLevel {
+    @Volatile var db: Float = -90f
+    private var lastNotify = 0L
+
+    fun dbOf(buf: ShortArray, n: Int): Float {
+        if (n <= 0) return -90f
+        var sum = 0.0
+        for (i in 0 until n) {
+            val s = buf[i].toDouble()
+            sum += s * s
+        }
+        val rms = Math.sqrt(sum / n)
+        if (rms < 1.0) return -90f
+        return (20.0 * Math.log10(rms / 32768.0)).toFloat().coerceIn(-90f, 0f)
+    }
+
+    fun set(value: Float, force: Boolean = false) {
+        db = value
+        val now = System.currentTimeMillis()
+        if (force || now - lastNotify >= 80) {
+            lastNotify = now
+            SvxBus.notifyChanged()
+        }
+    }
+}
