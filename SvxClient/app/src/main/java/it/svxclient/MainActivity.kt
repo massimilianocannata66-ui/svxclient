@@ -12,6 +12,7 @@ import android.graphics.Paint
 import android.os.Bundle
 import android.util.AttributeSet
 import android.view.View
+import android.view.WindowManager
 import android.text.InputType
 import android.view.KeyEvent
 import android.view.Menu
@@ -51,6 +52,8 @@ class MainActivity : AppCompatActivity() {
         prefs = Prefs(this)
 
         supportActionBar?.hide()          // niente tre puntini: c'e' il bottone Menu
+        // lo schermo resta acceso finche' l'app e' aperta (cosi' il tasto PTT arriva sempre)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         btnMenu = findViewById(R.id.btnMenu)
         btnExit = findViewById(R.id.btnExit)
         txtLevel = findViewById(R.id.txtLevel)
@@ -271,14 +274,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAudioDialog() {
+        val oldRx = prefs.rxGain
+        val oldTx = prefs.txGain
+        var saved = false
         val b = box()
-        slider("Volume ascolto", prefs.rxGain, { prefs.rxGain = it; SvxService.reloadSettings() }, b)
-        slider("Volume microfono", prefs.txGain, { prefs.txGain = it; SvxService.reloadSettings() }, b)
+        slider("Volume ascolto", oldRx, { prefs.rxGain = it; SvxService.reloadSettings() }, b)
+        slider("Volume microfono", oldTx, { prefs.txGain = it; SvxService.reloadSettings() }, b)
         AlertDialog.Builder(this)
             .setTitle("Impostazioni audio")
-            .setMessage("100% = volume normale. Salva da solo mentre muovi i cursori.")
+            .setMessage("100% = volume normale. Muovi i cursori e tocca Salva.")
             .setView(b)
-            .setPositiveButton("Chiudi", null)
+            .setPositiveButton("Salva") { _, _ ->
+                saved = true
+                SvxBus.log("Audio salvato: ascolto ${prefs.rxGain}%, microfono ${prefs.txGain}%")
+            }
+            .setNegativeButton("Annulla", null)
+            .setOnDismissListener {
+                if (!saved) {                      // annullato: torno ai valori di prima
+                    prefs.rxGain = oldRx
+                    prefs.txGain = oldTx
+                    SvxService.reloadSettings()
+                }
+            }
             .show()
     }
 
@@ -432,6 +449,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val connected = SvxBus.state == SvxSession.State.CONNECTED
+        btnPtt.visibility = if (prefs.pttScreenEnabled) View.VISIBLE else View.GONE
         btnPtt.isEnabled = connected && prefs.pttScreenEnabled
         val talker = SvxBus.talker
         btnPtt.text = when {
