@@ -5,6 +5,10 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Build
 import android.graphics.Canvas
 import android.graphics.Color
@@ -29,6 +33,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import it.svxclient.core.SvxSession
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
@@ -44,6 +49,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtLog: TextView
 
     private var hwPttDown = false
+
+    // ---- GPS
+    private var locMgr: LocationManager? = null
+    private var lastLoc: Location? = null
+    private val locListener = object : LocationListener {
+        override fun onLocationChanged(loc: Location) {
+            lastLoc = loc
+            runOnUiThread { render() }
+        }
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+    }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,6 +88,13 @@ class MainActivity : AppCompatActivity() {
 
         btnPtt.setOnTouchListener { v, ev ->
             if (!prefs.pttScreenEnabled) return@setOnTouchListener true
+            if (prefs.pttToggle) {
+                // a scatto: un tocco = trasmetti, un altro tocco = torna in ascolto
+                if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                    SvxService.ptt(!SvxBus.transmitting)
+                }
+                return@setOnTouchListener true
+            }
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     v.isPressed = true
@@ -87,10 +112,12 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         SvxBus.listener = { runOnUiThread { render() } }
+        startGps()
         render()
     }
 
     override fun onStop() {
+        stopGps()
         SvxBus.listener = null
         super.onStop()
     }
@@ -108,6 +135,14 @@ class MainActivity : AppCompatActivity() {
             Menu.NONE, 6, 6,
             if (prefs.pttScreenEnabled) "Disabilita PTT a schermo" else "Abilita PTT a schermo"
         )
+        m.menu.add(
+            Menu.NONE, 7, 7,
+            "PTT a scatto (Hold/Tap): " + if (prefs.pttToggle) "ATTIVO" else "SPENTO"
+        )
+        m.menu.add(
+            Menu.NONE, 8, 8,
+            if (prefs.gpsShow) "Nascondi posizione GPS" else "Mostra posizione GPS"
+        )
         m.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> showServerDialog()
@@ -117,6 +152,16 @@ class MainActivity : AppCompatActivity() {
                 5 -> showPttDialog()
                 6 -> {
                     prefs.pttScreenEnabled = !prefs.pttScreenEnabled
+                    render()
+                }
+                7 -> {
+                    prefs.pttToggle = !prefs.pttToggle
+                    if (!prefs.pttToggle && SvxBus.transmitting) SvxService.ptt(false)
+                    render()
+                }
+                8 -> {
+                    prefs.gpsShow = !prefs.gpsShow
+                    if (prefs.gpsShow) startGps() else stopGps()
                     render()
                 }
             }
@@ -381,6 +426,44 @@ class MainActivity : AppCompatActivity() {
         return super.onKeyUp(keyCode, event)
     }
 
+    // ------------------------------------------------------------- GPS
+
+    @SuppressLint("MissingPermission")
+    private fun startGps() {
+        if (!prefs.gpsShow) return
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        if (fine != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ),
+                43
+            )
+            return
+        }
+        stopGps()
+        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locMgr = lm
+        try {
+            for (p in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
+                if (lm.isProviderEnabled(p)) {
+                    lm.requestLocationUpdates(p, 5000L, 5f, locListener)
+                    val last = lm.getLastKnownLocation(p)
+                    if (last != null && lastLoc == null) lastLoc = last
+                }
+            }
+        } catch (e: Exception) {
+            SvxBus.log("GPS non disponibile: ${e.message}")
+        }
+    }
+
+    private fun stopGps() {
+        try { locMgr?.removeUpdates(locListener) } catch (_: Exception) {}
+        locMgr = null
+    }
+
     // ---------------------------------------------------- connessione
 
     private fun isActive() = SvxBus.active
@@ -391,7 +474,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (prefs.host.isEmpty() || prefs.callsign.isBlank() || prefs.password.isEmpty()) {
-            txtStatus.text = "Apri il menu ⋮ in alto a destra e compila \"Impostazioni server\""
+            txtStatus.text = "Apri il Menu e compila \"Impostazioni server\""
             return
         }
         if (needsPermissions()) {
@@ -420,6 +503,19 @@ class MainActivity : AppCompatActivity() {
     ) {
         @Suppress("DEPRECATION")
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 43) {
+            val ok = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            if (ok) {
+                startGps()
+            } else {
+                prefs.gpsShow = false
+                SvxBus.log("Permesso della posizione negato")
+            }
+            render()
+            return
+        }
         if (requestCode != 42) return
         // Il microfono e' indispensabile; le notifiche sono facoltative
         val micOk = ContextCompat.checkSelfPermission(
@@ -442,11 +538,23 @@ class MainActivity : AppCompatActivity() {
         val active = isActive()
         btnConnect.text = if (active) "Disconnetti" else "Connetti"
 
-        txtInfo.text = if (prefs.host.isEmpty()) {
-            "Server non impostato: apri il menu ⋮ in alto a destra"
+        var info = if (prefs.host.isEmpty()) {
+            "Server non impostato: apri il Menu"
         } else {
-            "${prefs.callsign} → ${prefs.host}:${prefs.port}   TG ${prefs.tg}"
+            "${prefs.callsign} \u2192 ${prefs.host}:${prefs.port}   TG ${prefs.tg}"
         }
+        if (prefs.gpsShow) {
+            val l = lastLoc
+            info += if (l == null) {
+                "\nGPS: in ricerca..."
+            } else {
+                String.format(
+                    Locale.US, "\nGPS: %.5f, %.5f  (\u00B1%d m)",
+                    l.latitude, l.longitude, l.accuracy.toInt()
+                )
+            }
+        }
+        txtInfo.text = info
 
         val connected = SvxBus.state == SvxSession.State.CONNECTED
         btnPtt.visibility = if (prefs.pttScreenEnabled) View.VISIBLE else View.GONE
@@ -454,11 +562,20 @@ class MainActivity : AppCompatActivity() {
         val talker = SvxBus.talker
         btnPtt.text = when {
             !prefs.pttScreenEnabled -> "PTT A SCHERMO DISABILITATO"
-            SvxBus.transmitting -> "STAI TRASMETTENDO"
+            SvxBus.transmitting ->
+                if (prefs.pttToggle) "TRASMETTI (TX)\nTocca per tornare in ascolto" else "STAI TRASMETTENDO"
             !connected -> "PTT"
-            talker != null -> "Occupato: $talker"
-            else -> "TIENI PREMUTO PER PARLARE"
+            talker != null -> "RICEZIONE (RX)\n$talker"
+            else -> if (prefs.pttToggle) "TOCCA PER PARLARE" else "TIENI PREMUTO PER PARLARE"
         }
+        // rosso = TX, verde = RX (qualcuno parla), grigio = nessuno parla
+        val pttColor = when {
+            SvxBus.transmitting -> Color.rgb(229, 57, 53)
+            talker != null -> Color.rgb(67, 160, 71)
+            else -> Color.rgb(117, 117, 117)
+        }
+        btnPtt.backgroundTintList = ColorStateList.valueOf(pttColor)
+        btnPtt.setTextColor(Color.WHITE)
 
         val nodes = if (SvxBus.nodes.isEmpty()) "" else "\nStazioni collegate: ${SvxBus.nodes.joinToString(", ")}"
         txtStatus.text = SvxBus.detail + nodes
