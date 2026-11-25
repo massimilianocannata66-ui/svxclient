@@ -9,7 +9,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import androidx.core.content.ContextCompat
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
@@ -68,6 +71,7 @@ class SvxService : Service() {
     private var wifiLock: WifiManager.WifiLock? = null
     private val retryRunnable = Runnable { openSession() }
     private var pttReceiver: BroadcastReceiver? = null
+    private var pos: PosReporter? = null
     private var downActions: Set<String> = emptySet()
     private var upActions: Set<String> = emptySet()
 
@@ -96,6 +100,7 @@ class SvxService : Service() {
                 acquireLocks()
                 registerPttReceiver()
                 openSession()
+                pos = PosReporter(this).also { it.start() }
             }
             ACTION_DISCONNECT -> {
                 wantConnected = false
@@ -138,6 +143,8 @@ class SvxService : Service() {
     private fun closeAll(detail: String = "Non connesso") {
         main.removeCallbacks(retryRunnable)
         unregisterPttReceiver()
+        pos?.stop()
+        pos = null
         session?.stop()
         session = null
         audio?.stop()
@@ -314,7 +321,14 @@ class SvxService : Service() {
         }
         val n = buildNotification(text)
         if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            val locOk = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            if (Prefs(this).posUrl.isNotBlank() && locOk) {
+                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            }
+            startForeground(NOTIF_ID, n, type)
         } else {
             startForeground(NOTIF_ID, n)
         }

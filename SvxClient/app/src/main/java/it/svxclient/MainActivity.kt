@@ -143,6 +143,10 @@ class MainActivity : AppCompatActivity() {
             Menu.NONE, 8, 8,
             if (prefs.gpsShow) "Nascondi posizione GPS" else "Mostra posizione GPS"
         )
+        m.menu.add(
+            Menu.NONE, 9, 9,
+            "Posizione per la dashboard: " + if (prefs.posUrl.isBlank()) "SPENTA" else "ATTIVA"
+        )
         m.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> showServerDialog()
@@ -164,6 +168,7 @@ class MainActivity : AppCompatActivity() {
                     if (prefs.gpsShow) startGps() else stopGps()
                     render()
                 }
+                9 -> showPosDialog()
             }
             true
         }
@@ -220,6 +225,47 @@ class MainActivity : AppCompatActivity() {
                 prefs.callsign = call.text.toString().trim()
                 prefs.password = pass.text.toString()
                 prefs.tg = tg.text.toString().trim().toIntOrNull() ?: 1
+                render()
+            }
+            .show()
+    }
+
+    private fun showPosDialog() {
+        val b = box()
+        val info = TextView(this)
+        info.text = "Indirizzo della dashboard che riceve la posizione GPS. " +
+            "Lascia vuoto per non inviarla.\n\nEsempio:\n" +
+            "http://9jadiyn7rn43g858.myfritz.net:8088/api/pos\n\n" +
+            "Se la dashboard ha la password:\n" +
+            "http://utente:password@host:8088/api/pos\n\n" +
+            "La posizione e' inviata ogni 30 secondi mentre sei connesso, con il tuo nominativo. " +
+            "Dopo averla cambiata, disconnetti e riconnetti."
+        val url = field("Indirizzo dashboard", prefs.posUrl, InputType.TYPE_TEXT_VARIATION_URI)
+        b.addView(info)
+        b.addView(url)
+        AlertDialog.Builder(this)
+            .setTitle("Posizione per la dashboard")
+            .setView(b)
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("Salva") { _, _ ->
+                prefs.posUrl = url.text.toString().trim()
+                if (prefs.posUrl.isNotEmpty() && ContextCompat.checkSelfPermission(
+                        this, Manifest.permission.ACCESS_FINE_LOCATION
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    ActivityCompat.requestPermissions(
+                        this,
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        ),
+                        44
+                    )
+                }
+                SvxBus.log(
+                    if (prefs.posUrl.isEmpty()) "Invio posizione disattivato"
+                    else "Invio posizione impostato: riconnetti per attivarlo"
+                )
                 render()
             }
             .show()
@@ -487,6 +533,10 @@ class MainActivity : AppCompatActivity() {
     private fun neededPermissions(): List<String> {
         val l = mutableListOf(Manifest.permission.RECORD_AUDIO)
         if (Build.VERSION.SDK_INT >= 33) l.add(Manifest.permission.POST_NOTIFICATIONS)
+        if (prefs.posUrl.isNotBlank()) {
+            l.add(Manifest.permission.ACCESS_FINE_LOCATION)
+            l.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
         return l
     }
 

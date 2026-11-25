@@ -84,4 +84,9 @@ class Prefs(context: Context) {
     var gpsShow: Boolean
         get() = sp.getBoolean("gpsShow", false)
         set(v) = sp.edit().putBoolean("gpsShow", v).apply()
+
+    /** Indirizzo della dashboard che riceve la posizione GPS (vuoto = non inviare). */
+    var posUrl: String
+        get() = sp.getString("posUrl", "") ?: ""
+        set(v) = sp.edit().putString("posUrl", v).apply()
 }
