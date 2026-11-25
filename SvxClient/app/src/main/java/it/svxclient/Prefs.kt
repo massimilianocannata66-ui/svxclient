@@ -74,4 +74,14 @@ class Prefs(context: Context) {
     var pttScreenEnabled: Boolean
         get() = sp.getBoolean("pttScreen", true)
         set(v) = sp.edit().putBoolean("pttScreen", v).apply()
+
+    /** PTT a schermo "a scatto": un tocco trasmette, un altro tocco torna in ascolto. */
+    var pttToggle: Boolean
+        get() = sp.getBoolean("pttToggle", true)
+        set(v) = sp.edit().putBoolean("pttToggle", v).apply()
+
+    /** Mostra la posizione GPS nella schermata principale. */
+    var gpsShow: Boolean
+        get() = sp.getBoolean("gpsShow", false)
+        set(v) = sp.edit().putBoolean("gpsShow", v).apply()
 }
